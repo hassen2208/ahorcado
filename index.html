@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Juego del Ahorcado</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --text: #1d2a39;
+      --muted: #5f7188;
+      --primary: #2f80ed;
+      --primary-hover: #1769d1;
+      --ok: #1f9d55;
+      --error: #d33c3c;
+      --border: #dbe4f0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+    }
+
+    .game {
+      width: min(760px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgba(47, 128, 237, 0.08);
+      padding: 1.5rem;
+      display: grid;
+      gap: 1rem;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.5rem, 2.5vw, 2rem);
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    pre {
+      margin: 0 auto;
+      padding: 1rem;
+      width: min(420px, 100%);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #f8fbff;
+      color: #2b3f57;
+      text-align: left;
+      font-size: 1rem;
+      overflow-x: auto;
+    }
+
+    .word {
+      font-size: clamp(1.35rem, 3vw, 1.85rem);
+      letter-spacing: 0.35rem;
+      font-weight: 600;
+      min-height: 2.2rem;
+    }
+
+    .keyboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(38px, 1fr));
+      gap: 0.45rem;
+    }
+
+    .keyboard button,
+    #restartBtn {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.55rem 0.45rem;
+      background: #f6f9ff;
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+
+    .keyboard button:hover:not(:disabled),
+    #restartBtn:hover {
+      transform: translateY(-1px);
+      background: #ebf3ff;
+      border-color: #bfd6fb;
+    }
+
+    .keyboard button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    #message {
+      min-height: 1.3rem;
+      font-weight: 700;
+    }
+
+    .win {
+      color: var(--ok);
+    }
+
+    .lose {
+      color: var(--error);
+    }
+
+    #restartBtn {
+      display: none;
+      background: var(--primary);
+      color: #fff;
+      border-color: transparent;
+      width: fit-content;
+      margin: 0 auto;
+      padding-inline: 1rem;
+    }
+
+    #restartBtn:hover {
+      background: var(--primary-hover);
+    }
+  </style>
+</head>
+<body>
+  <main class="game">
+    <h1>🎮 El Ahorcado</h1>
+    <p>Adivina la palabra antes de completar el dibujo.</p>
+
+    <pre id="hangmanAscii"></pre>
+    <div id="wordDisplay" class="word"></div>
+    <div id="message"></div>
+    <div id="keyboard" class="keyboard"></div>
+    <button id="restartBtn" type="button">Jugar de Nuevo</button>
+  </main>
+
+  <script>
+    const WORDS = [
+      "DESARROLLO",
+      "INTERFAZ",
+      "PROGRAMADOR",
+      "ALGORITMO",
+      "SERVIDOR",
+      "VARIABLE",
+      "JAVASCRIPT",
+      "COMPILADOR"
+    ];
+
+    const HANGMAN_STAGES = [
+` +---+
+ |   |
+     |
+     |
+     |
+     |
+=========
+`,
+` +---+
+ |   |
+ O   |
+     |
+     |
+     |
+=========
+`,
+` +---+
+ |   |
+ O   |
+ |   |
+     |
+     |
+=========
+`,
+` +---+
+ |   |
+ O   |
+/|   |
+     |
+     |
+=========
+`,
+` +---+
+ |   |
+ O   |
+/|\\  |
+     |
+     |
+=========
+`,
+` +---+
+ |   |
+ O   |
+/|\\  |
+/    |
+     |
+=========
+`,
+` +---+
+ |   |
+ O   |
+/|\\  |
+/ \\  |
+     |
+=========
+`
+    ];
+
+    const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+    const hangmanAscii = document.getElementById("hangmanAscii");
+    const wordDisplay = document.getElementById("wordDisplay");
+    const message = document.getElementById("message");
+    const keyboard = document.getElementById("keyboard");
+    const restartBtn = document.getElementById("restartBtn");
+
+    let selectedWord = "";
+    let guessedLetters = new Set();
+    let errors = 0;
+    let gameOver = false;
+
+    function chooseRandomWord() {
+      const index = Math.floor(Math.random() * WORDS.length);
+      return WORDS[index];
+    }
+
+    function updateWordDisplay() {
+      const visible = selectedWord
+        .split("")
+        .map((letter) => guessedLetters.has(letter) ? letter : "_")
+        .join(" ");
+      wordDisplay.textContent = visible;
+    }
+
+    function updateHangman() {
+      hangmanAscii.textContent = HANGMAN_STAGES[errors];
+    }
+
+    function disableKeyboard() {
+      const buttons = keyboard.querySelectorAll("button");
+      buttons.forEach((button) => {
+        button.disabled = true;
+      });
+    }
+
+    function checkGameState() {
+      const hasWon = selectedWord.split("").every((letter) => guessedLetters.has(letter));
+      if (hasWon) {
+        gameOver = true;
+        message.textContent = "¡Ganaste!";
+        message.className = "win";
+        restartBtn.style.display = "inline-block";
+        disableKeyboard();
+        return;
+      }
+
+      if (errors >= 6) {
+        gameOver = true;
+        message.textContent = `¡Perdiste! La palabra era: ${selectedWord}`;
+        message.className = "lose";
+        restartBtn.style.display = "inline-block";
+        disableKeyboard();
+      }
+    }
+
+    function handleGuess(letter, button) {
+      if (gameOver || guessedLetters.has(letter)) {
+        return;
+      }
+
+      guessedLetters.add(letter);
+      button.disabled = true;
+
+      if (selectedWord.includes(letter)) {
+        updateWordDisplay();
+      } else {
+        errors += 1;
+        updateHangman();
+      }
+
+      checkGameState();
+    }
+
+    function buildKeyboard() {
+      keyboard.innerHTML = "";
+
+      ALPHABET.forEach((letter) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = letter;
+        button.addEventListener("click", () => handleGuess(letter, button));
+        keyboard.appendChild(button);
+      });
+    }
+
+    function startGame() {
+      selectedWord = chooseRandomWord();
+      guessedLetters = new Set();
+      errors = 0;
+      gameOver = false;
+
+      message.textContent = "";
+      message.className = "";
+      restartBtn.style.display = "none";
+
+      updateHangman();
+      updateWordDisplay();
+      buildKeyboard();
+    }
+
+    restartBtn.addEventListener("click", startGame);
+
+    startGame();
+  </script>
+</body>
+</html>
